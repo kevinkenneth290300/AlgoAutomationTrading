@@ -1,0 +1,6 @@
+{
+  "name": "CoinDCX Quant & AI Trading Terminal",
+  "description": "Production-grade quantitative cryptocurrency research, strategy discovery, backtesting, validation, paper trading, and CoinDCX Futures execution engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

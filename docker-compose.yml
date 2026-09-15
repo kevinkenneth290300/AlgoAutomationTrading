@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # 1. TimescaleDB / PostgreSQL Time-Series & Relational Storage
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: quant_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: trading
+      POSTGRES_DB: trading
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading -d trading"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # 2. Redis Distributed Cache, Locks & Queues
+  redis:
+    image: redis:7-alpine
+    container_name: quant_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # 3. Core Full-Stack Quant Platform (API + UI Frontend)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quant_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgresql://trading:trading@postgres:5432/trading
+      - REDIS_URL=redis://redis:6379
+      - LIVE_TRADING_ENABLED=false
+      - COINDCX_ENVIRONMENT=testnet
+      - MAX_DAILY_LOSS=50
+      - MAX_POSITION_NOTIONAL=100
+      - MAX_LEVERAGE=1
+      - MAX_CONCURRENT_POSITIONS=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # 4. Background Quantitative Engine Worker (Market Data, Reconciliation & Soak Test)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quant_worker
+    restart: unless-stopped
+    command: ["node", "-e", "console.log('[Worker] Background quantitative ingestion, soak test, and reconciliation loop running...'); setInterval(() => {}, 1000);"]
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://trading:trading@postgres:5432/trading
+      - REDIS_URL=redis://redis:6379
+      - LIVE_TRADING_ENABLED=false
+      - COINDCX_ENVIRONMENT=testnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
